@@ -235,6 +235,6 @@ async fn main() {
         }
         next_frame().await;
         let fps = 1.0/get_frame_time();
-        println!("FPS: {}", fps);
+        //println!("FPS: {}", fps);
     }
 }
