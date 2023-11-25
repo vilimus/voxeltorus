@@ -31,7 +31,8 @@ struct Cell {
     color: Vector3<f32>
 }
 
-fn load_world() -> [[[Cell; LZ]; LY]; LX] {
+
+fn load_world() -> Vec<Vec<Vec<Cell>>> {
 
     let air   = Cell {visible: false,  color: Vector3::new(0.0, 0.0, 0.0)};
     let stone = Cell {visible: true,   color: Vector3::new(0.1, 0.1, 0.1)};
@@ -41,7 +42,7 @@ fn load_world() -> [[[Cell; LZ]; LY]; LX] {
     let wood  = Cell {visible: true,   color: Vector3::new(0.5, 0.25, 0.0)};
     let leaves = Cell {visible: true,   color: Vector3::new(0.0, 0.25, 0.0)};
 
-    let mut world: [[[Cell; LZ]; LY]; LX] = [[[air; LZ]; LY]; LX];
+    let mut world: Vec<Vec<Vec<Cell>>> = vec![vec![vec![air; LZ]; LY]; LX];
 
     for i in 0..LX {
         for k in 0..LZ {
@@ -55,7 +56,7 @@ fn load_world() -> [[[Cell; LZ]; LY]; LX] {
             world[i][63][k] = sky;
         }
     }
-    for i in 6..11 {
+    for i in 22..11 {
         for j in 6..11 {
             world[i][50][j] = leaves;
             world[i][51][j] = leaves;
@@ -95,7 +96,7 @@ fn lattice_intersect(pos: Vector3<f32>, v: Vector3<f32>) -> (Vector3<f32>, Vecto
     return (x_new, key);
 }
 
-fn raycast(world: [[[Cell; LZ]; LY]; LX], cell_x0: Vector3<usize>, x0: Vector3<f32>, v: Vector3<f32>, max_steps: usize) -> (Vector3<usize>, usize) {
+fn raycast(world: &Vec<Vec<Vec<Cell>>>, cell_x0: Vector3<usize>, x0: Vector3<f32>, v: Vector3<f32>, max_steps: usize) -> (Vector3<usize>, usize) {
     let mut cell_x = cell_x0;
     let mut x = x0;
     let mut steps = 0;
@@ -135,6 +136,7 @@ async fn main() {
     let rect_size_y = SCREEN_SIZE.1 / (SCREEN.1 as f32);
 
     let mut alive = true;
+	let mut fps = 0.0;
     while alive {
         if is_key_pressed(KeyCode::Escape) {
             alive = false;
@@ -158,6 +160,9 @@ async fn main() {
         }
         if is_key_down(KeyCode::D) {
             vel = vel + right;
+        }
+		if is_key_down(KeyCode::I) {
+			println!("fps: {}", fps);
         }
         let vel_norm = vel.norm();
         if vel_norm > 0.0 {
@@ -210,7 +215,7 @@ async fn main() {
         right = Vector3::new(-cam[0].sin(),              0.0,           cam[0].cos());
 
         if is_mouse_button_pressed(MouseButton::Left) {
-            let (cell_x, steps) = raycast(world, cell, pos, look, BREAK_DISTANCE);
+            let (cell_x, steps) = raycast(&world, cell, pos, look, BREAK_DISTANCE);
             world[cell_x.x][cell_x.y][cell_x.z].visible = false;
         }
         for i in 0..(SCREEN.0) {
@@ -219,7 +224,7 @@ async fn main() {
                 let b_j = (((j as f32) / (SCREEN.1 as f32) - 0.5) * FOV.1).atan();
                 let look_ij = look + a_i*right - b_j*up;
 
-                let (cell_x, steps) = raycast(world, cell, pos, look_ij, VIEW_DISTANCE);
+                let (cell_x, steps) = raycast(&world, cell, pos, look_ij, VIEW_DISTANCE);
 
                 let cell_hit = world[cell_x.x][cell_x.y][cell_x.z];
                 let fade: f32 = 1.0 - (steps as f32) / (VIEW_DISTANCE as f32);
@@ -234,7 +239,7 @@ async fn main() {
             }
         }
         next_frame().await;
-        let fps = 1.0/get_frame_time();
+        fps = 1.0/get_frame_time();
         //println!("FPS: {}", fps);
     }
 }
