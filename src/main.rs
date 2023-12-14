@@ -5,11 +5,11 @@ use rayon::prelude::*;
 // Settings
 const RESOLUTION: (f32, f32) = (800 as f32, 600 as f32);
 const SCREEN: (usize, usize) = (400, 250);
-const WORLDSIZE: [usize; 3] = [256, 256, 256];
+const WORLDSIZE: [usize; 3] = [512, 64, 512];
 const MOVEMENT_SPEED: f32 = 0.5;
 const ROTATION_SPEED: (f32, f32) = (0.5, 0.5);
 const FOV: (f32, f32) = (PI/2.0, PI/2.0*(SCREEN.1 as f32)/(SCREEN.0 as f32));
-const VIEW_DISTANCE: usize = 128;
+const VIEW_DISTANCE: usize = 32;
 const TOUCH_DISTANCE: usize = 16;
 const AMBIENT: Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
 const RECTSIZE_X: f32 = RESOLUTION.0 / (SCREEN.0 as f32);
@@ -39,9 +39,17 @@ fn randf() -> f32 {
 fn randr(a: f32, b: f32) -> f32 {
 	a + (b -a) * randf()
 }
-fn combine_worlds(w1: World, w2: World) -> World {
-	// add them as lists
-	return w1;
+fn combine(w1: World, w2: World) -> World {
+    let n1 = w1.len();
+    let n2 = w2.len();
+    let mut w = w1;
+    w.extend(w2);
+    for i in 0..n2 {
+        for j in 0..6 {
+            w[n1 + i].1[j] = w[n1 + i].1[j] + n1;
+        }
+    }
+    return w;
 }
 fn build_world(nx: usize, ny: usize, nz: usize) -> World {
 	let voxel = Voxel {
@@ -65,16 +73,39 @@ fn build_world(nx: usize, ny: usize, nz: usize) -> World {
 		}
 	}
 	for i in 0..nx {
-		for j in 0..16 {
-			for k in 0..nz {
+		for k in 0..nz {
+            let n = furl(i, 0, k, ny, nz);
+            world[n].0.color = vec4(
+                randr(0.0, 0.1),
+                randr(0.0, 0.1),
+                randr(0.0, 0.1),
+                gen_range(1, 2) as f32
+            );
+            for j in 1..12 {
 				let n = furl(i, j, k, ny, nz);
 				world[n].0.color = vec4(
-					randr(0.3, 0.4),
-					randr(0.8, 0.9),
-					randr(0.3, 0.4),
-					gen_range(0, 2) as f32
+					randr(0.4, 0.6),
+					randr(0.4, 0.6),
+					randr(0.4, 0.6),
+					gen_range(1, 2) as f32
 				);
 			}
+			for j in 12..16 {
+				let n = furl(i, j, k, ny, nz);
+				world[n].0.color = vec4(
+					randr(0.5, 0.6),
+					randr(0.3, 0.4),
+					randr(0.1, 0.2),
+					gen_range(1, 2) as f32
+				);
+			}
+			let n = furl(i, 16, k, ny, nz);
+            world[n].0.color = vec4(
+                randr(0.1, 0.2),
+                randr(0.7, 0.8),
+                randr(0.1, 0.2),
+                gen_range(0, 2) as f32
+            );
 		}
 	}
 	for _ in 0..200 {
@@ -230,25 +261,26 @@ async fn main() {
 			},
 			None => {},
 		}
-		let neighbors = world[camera.i].1;
 		let mut camera_delta = vec3(0.0, 0.0, 0.0);
 		if camera.position[0] < 0.0 {
-			camera.i = neighbors[1];
+			camera.i = world[camera.i].1[1];
 			camera_delta[0] = 1.0;
 		} else if camera.position[0] > 1.0 {
-			camera.i = neighbors[0];
+			camera.i = world[camera.i].1[0];
 			camera_delta[0] = -1.0;
-		} else if camera.position[1] < 0.0 {
-			camera.i = neighbors[3];
+		}
+		if camera.position[1] < 0.0 {
+			camera.i = world[camera.i].1[3];
 			camera_delta[1] = 1.0;
 		} else if camera.position[1] > 1.0 {
-			camera.i = neighbors[2];
+			camera.i = world[camera.i].1[2];
 			camera_delta[1] = -1.0;
-		} else if camera.position[2] < 0.0 {
-			camera.i = neighbors[5];
+		}
+		if camera.position[2] < 0.0 {
+			camera.i = world[camera.i].1[5];
 			camera_delta[2] = 1.0;
 		} else if camera.position[2] > 1.0 {
-			camera.i = neighbors[4];
+			camera.i = world[camera.i].1[4];
 			camera_delta[2] = -1.0;
 		}
 		camera.position = camera.position + camera_delta;
@@ -268,26 +300,25 @@ async fn main() {
 				world[i].0.brightness = selected.brightness;
 			}
 		}
-		// update_brightness(&mut world);
-		screen.par_iter_mut().enumerate().for_each(|(i, row)| {
-			row.par_iter_mut().enumerate().for_each(|(j, cell)| {
+		//update_brightness(&mut world);
+		screen.par_iter_mut().enumerate().for_each(|(i, screen_i)| {
+			screen_i.par_iter_mut().enumerate().for_each(|(j, screen_i_j)| {
 				let right_coeff = (((i as f32) / (camera.screen.0 as f32) - 0.5) * camera.fov.0).atan();
 				let up_coeff = (((j as f32) / (camera.screen.1 as f32) - 0.5) * camera.fov.1).atan();
 				let ray = look + right_coeff*right - up_coeff*up;
 				let (rayhit_i, rayhit_x, distance) = raycast(&world, camera.i, camera.position, ray, VIEW_DISTANCE);
-				let mut fade = 0.0;
 				let mut fade = 1.7321 * distance / (VIEW_DISTANCE as f32);// * 3.0.pow(-1.0/3.0);
 				if rayhit_i == target_i {
 					fade = 0.5*(fade + 1.0);
 				}
-				let (shortstop_i, _, _) = raycast(&world, rayhit_i, rayhit_x, -ray, 1);
-				let local_brightness = clamp(world[shortstop_i].0.brightness, 0.0, 1.0);
-				let color = (1.0 - local_brightness)*fade*AMBIENT + local_brightness*(1.0 - fade)*world[rayhit_i].0.color;
-				*cell = color;
+				//let (shortstop_i, _, _) = raycast(&world, rayhit_i, rayhit_x, -ray, 1);
+				//let brightness = clamp(world[shortstop_i].0.brightness, 0.0, 1.0);
+				//*screen_i_j = (1.0 - brightness)*fade*AMBIENT + brightness*(1.0 - fade)*world[rayhit_i].0.color;
+                *screen_i_j = fade*AMBIENT + (1.0 - fade)*world[rayhit_i].0.color;
 			})
 		});
-		screen.iter().enumerate().for_each(|(i, row)| {
-			row.iter().enumerate().for_each(|(j, _)| {
+		screen.iter().enumerate().for_each(|(i, screen_i)| {
+			screen_i.iter().enumerate().for_each(|(j, _)| {
 				draw_rectangle(
 					RECTSIZE_X*(i as f32),
 					RECTSIZE_Y*(j as f32),
