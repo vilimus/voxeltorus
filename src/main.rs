@@ -4,14 +4,14 @@ use macroquad::rand::{rand, gen_range};
 use rayon::prelude::*;
 // Settings
 const RESOLUTION: (f32, f32) = (800 as f32, 600 as f32);
-const SCREEN: (usize, usize) = (400, 250);
-const WORLDSIZE: [usize; 3] = [512, 64, 512];
+const SCREEN: (usize, usize) = (400, 300);
+const WORLDSIZE: [usize; 3] = [64, 64, 64];
 const MOVEMENT_SPEED: f32 = 0.5;
-const ROTATION_SPEED: (f32, f32) = (0.5, 0.5);
+const ROTATION_SPEED: (f32, f32) = (0.75, 0.75);
 const FOV: (f32, f32) = (PI/2.0, PI/2.0*(SCREEN.1 as f32)/(SCREEN.0 as f32));
-const VIEW_DISTANCE: usize = 32;
+const VIEW_DISTANCE: usize = 128;
 const TOUCH_DISTANCE: usize = 16;
-const AMBIENT: Vec4 = vec4(1.0, 1.0, 1.0, 1.0);
+const AMBIENT: Vec4 = vec4(0.0, 0.0, 0.0, 1.0);
 const RECTSIZE_X: f32 = RESOLUTION.0 / (SCREEN.0 as f32);
 const RECTSIZE_Y: f32 = RESOLUTION.1 / (SCREEN.1 as f32);
 struct Camera {
@@ -108,6 +108,17 @@ fn build_world(nx: usize, ny: usize, nz: usize) -> World {
             );
 		}
 	}
+	// place trees
+	for _ in 0..200 {
+		let i = gen_range(0, nx);
+		let k = gen_range(0, nz);
+		let n = furl(i, 16, k, ny, nz);
+		world[n].0.color = vec4(0.5, 0.4, 0.3, 1.0);
+	}
+	return world;
+	
+	// place lamps
+	
 	for _ in 0..200 {
 		let i = gen_range(0, world.len());
 		if world[i].0.color.w == 1.0 {
@@ -166,12 +177,34 @@ fn update(world: &mut World, delta_t: f32) {
 		for j in world[i].1 {
 			neighbor_sum = neighbor_sum + world[j].0.color;
 		}
+		if world[i].0.color.w == 1.0 && 3.0 <= neighbor_sum.w && neighbor_sum.w <= 6.0 {
+			world[i].0.color.w = 1.0;
+		} else if world[i].0.color.w < 1.0 && 3.0 <= neighbor_sum.w && neighbor_sum.w <= 6.0 {
+			world[i].0.color.w = 1.0;
+		} else {
+			world[i].0.color.w = 0.0;
+		}
+	}
+}
+fn update2(world: &mut World, delta_t: f32) {
+	for _ in 0..((delta_t * (world.len() as f32)) as usize)  {
+		let i = gen_range(0, world.len() - 1);
+		let mut neighbor_sum = vec4(0.0, 0.0, 0.0, 0.0);
+		for j in world[i].1 {
+			neighbor_sum = neighbor_sum + world[j].0.color;
+		}
 		if world[i].0.color.w == 1.0 && 4.0 <= neighbor_sum.w && neighbor_sum.w <= 6.0 {
 			world[i].0.color.w = 1.0;
 		} else if world[i].0.color.w < 1.0 && 3.0 <= neighbor_sum.w && neighbor_sum.w <= 6.0 {
 			world[i].0.color.w = 1.0;
 		} else {
 			world[i].0.color.w = 0.0;
+		}
+		if world[i].0.color == vec4(0.5, 0.4, 0.3, 1.0) {
+			let up_i = world[i].1[2];
+			if world[up_i].0.color.w < 1.0 {
+				world[up_i].0.color = vec4(0.5, 0.4 + 0.3*((gen_range(0,10)<1) as i32 as f32), 0.3, 1.0);
+			}
 		}
 	}
 }
@@ -195,7 +228,7 @@ fn update_brightness(world: &mut World) {
 async fn main() {
 	request_new_screen_size(RESOLUTION.0, RESOLUTION.1);
 	let mut world = build_world(WORLDSIZE[0], WORLDSIZE[1], WORLDSIZE[2]);
-	//update(&mut world, 10.0);
+	update(&mut world, 10.0);
 	//for _ in 0..20 {
 	//	update_brightness(&mut world);
 	//}
@@ -209,13 +242,14 @@ async fn main() {
 		fov: FOV,
 		screen: SCREEN,
 	};
-	let mut screen: Vec<Vec<Vec4>> = vec![vec![vec4(0.0, 0.0, 0.0, 0.0); camera.screen.1]; camera.screen.0];
+	let mut screen: Vec<Vec<(Vec4, f32)>> = vec![vec![(vec4(0.0, 0.0, 0.0, 0.0), 0.0); camera.screen.1]; camera.screen.0];
+	//let mut depth_field: Vec<Vec<f32>> = vec![vec![0.0; camera.screen.1]; camera.screen.0];
 	let mut grabbed = true;
 	while world[camera.i].0.color[3] == 1.0 {
 		camera.i = world[camera.i].1[2];
 	}
 	let mut selected = Voxel {
-		color: vec4(1.0, 1.0, 1.0, 1.0),
+		color: vec4(0.5, 0.4, 0.3, 1.0),
 		brightness: 0.8,
 	};
 	loop {
@@ -237,10 +271,10 @@ async fn main() {
 		let up	= vec3(-camera.angle[0].cos()*camera.angle[1].sin(), camera.angle[1].cos(), -camera.angle[0].sin()*camera.angle[1].sin());
 		let right = vec3(-camera.angle[0].sin(),					   0.0,					camera.angle[0].cos());
 		let mut dx = vec3(0.0, 0.0, 0.0);
-		if is_key_down(KeyCode::E) {
+		if is_key_down(KeyCode::Space) {
 			dx = dx + vec3(0.0, 1.0, 0.0)
 		}
-		if is_key_down(KeyCode::Q) {
+		if is_key_down(KeyCode::LeftShift) {
 			dx = dx - vec3(0.0, 1.0, 0.0)
 		}
 		if is_key_down(KeyCode::W) {
@@ -288,11 +322,6 @@ async fn main() {
 		if is_mouse_button_pressed(MouseButton::Left) {
 			world[target_i].0.color.w = 0.0;
 		}
-		if is_mouse_button_pressed(MouseButton::Middle) {
-			if world[target_i].0.color.w == 1.0 {
-				selected = world[target_i].0;
-			}
-		}
 		if is_mouse_button_pressed(MouseButton::Right) {
 			if world[target_i].0.color.w == 1.0 {
 				let (i, _, _) = raycast(&world, target_i, target_x, -look, 1);
@@ -300,7 +329,7 @@ async fn main() {
 				world[i].0.brightness = selected.brightness;
 			}
 		}
-		//update_brightness(&mut world);
+		update2(&mut world, 0.01);
 		screen.par_iter_mut().enumerate().for_each(|(i, screen_i)| {
 			screen_i.par_iter_mut().enumerate().for_each(|(j, screen_i_j)| {
 				let right_coeff = (((i as f32) / (camera.screen.0 as f32) - 0.5) * camera.fov.0).atan();
@@ -314,9 +343,21 @@ async fn main() {
 				//let (shortstop_i, _, _) = raycast(&world, rayhit_i, rayhit_x, -ray, 1);
 				//let brightness = clamp(world[shortstop_i].0.brightness, 0.0, 1.0);
 				//*screen_i_j = (1.0 - brightness)*fade*AMBIENT + brightness*(1.0 - fade)*world[rayhit_i].0.color;
-                *screen_i_j = fade*AMBIENT + (1.0 - fade)*world[rayhit_i].0.color;
+                (*screen_i_j).0 = fade*AMBIENT + (1.0 - fade)*world[rayhit_i].0.color;
+				(*screen_i_j).1 = distance;
 			})
 		});
+		// depth of field lmaoo
+		//for _ in 0..10 {
+		//	for i in 1..camera.screen.0-1 {
+		//		for j in 1..camera.screen.1-1 {
+		//			screen[i][j].0 = screen[i][j].0 + 0.2*(1.7321*screen[i][j].1/(VIEW_DISTANCE as f32))*(-4.0*screen[i][j].0 + screen[i+1][j].0 + screen[i-1][j].0 + screen[i][j+1].0 + screen[i][j-1].0);
+		//		}
+		//	}
+		//}
+		
+		//let mut screen: Vec<Vec<Vec4>> = vec![vec![vec4(0.0, 0.0, 0.0, 0.0); camera.screen.1]; camera.screen.0];
+		
 		screen.iter().enumerate().for_each(|(i, screen_i)| {
 			screen_i.iter().enumerate().for_each(|(j, _)| {
 				draw_rectangle(
@@ -324,7 +365,7 @@ async fn main() {
 					RECTSIZE_Y*(j as f32),
 					RECTSIZE_X,
 					RECTSIZE_Y,
-					Color::from_vec(screen[i][j])
+					Color::from_vec(screen[i][j].0)
 				);
 			})
 		});
